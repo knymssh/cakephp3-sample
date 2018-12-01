@@ -1,0 +1,24 @@
+FROM local/centos7-base
+LABEL maintainer="kanaya <kanaya@cloudpack.jp>"
+
+#RUN cp -f /usr/share/zoneinfo/Japan /etc/localtime
+#RUN timedatectl set-timezone Asia/Tokyo
+
+# Install composer
+RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+
+# Setup app
+WORKDIR /root/cakephp-app
+
+VOLUME [ "/root/cakephp-app" ]
+
+COPY cakephp-app/composer.* /tmp/
+ENV COMPOSER_ALLOW_SUPERUSER 1
+RUN composer install --no-scripts --no-autoloader -d /tmp
+
+#CMD composer install
+CMD mv -n /tmp/vendor /root/cakephp-app/ \
+    && cd /root/cakephp-app/ && composer dump-autoload
+
+# docker build --rm -t local/c7-composer -f Dockerfile-composer .
+# docker run -v `pwd`/cakephp-app:/root/cakephp-app local/c7-composer

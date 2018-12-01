@@ -1,0 +1,90 @@
+FROM centos:7
+LABEL maintainer="kanaya <kanaya@cloudpack.jp>"
+
+# ARG definition
+ARG mysql_version="5.7.16"
+
+RUN cp -f /usr/share/zoneinfo/Japan /etc/localtime
+#RUN timedatectl set-timezone Asia/Tokyo
+
+ENV container docker
+RUN (cd /lib/systemd/system/sysinit.target.wants/; for i in *; do [ $i == \
+  systemd-tmpfiles-setup.service ] || rm -f $i; done); \
+  rm -f /lib/systemd/system/multi-user.target.wants/*;\
+  rm -f /etc/systemd/system/*.wants/*;\
+  rm -f /lib/systemd/system/local-fs.target.wants/*; \
+  rm -f /lib/systemd/system/sockets.target.wants/*udev*; \
+  rm -f /lib/systemd/system/sockets.target.wants/*initctl*; \
+  rm -f /lib/systemd/system/basic.target.wants/*;\
+  rm -f /lib/systemd/system/anaconda.target.wants/*;
+
+# Yum
+RUN yum update -y  && yum install -y gcc make git vim unzip
+
+# Remove old PHP
+RUN yum remove php*
+RUN yum remove php-*
+RUN yum clean all
+
+# Install PHP 7.2
+RUN yum -y install epel-release
+RUN rpm -Uvh http://rpms.famillecollet.com/enterprise/remi-release-7.rpm
+RUN yum -y install libwebp --enablerepo=epel
+RUN yum -y install libmcrypt libtool libtool-ltdl libtidy libXpm libtiff libxslt gd-last autoconf automake httpd MySQL-python
+RUN yum -y install --enablerepo=remi-php72 \
+ php php-devel php-pdo php-mysqlnd php-mbstring php-opcache php-pecl-mcrypt php-gd php-xml php-intl php-fpm php-pecl-zip
+
+# Remove old MySQL
+RUN yum -y remove mariadb-libs mysql-community-release
+RUN rm -rf /var/lib/mysql/
+
+# Install MySQL 5.7
+RUN yum -y localinstall http://dev.mysql.com/get/mysql57-community-release-el7-9.noarch.rpm
+RUN yum -y install mysql-community-client-${mysql_version} mysql-community-common-${mysql_version} mysql-community-libs-${mysql_version} mysql-community-libs-compat-${mysql_version}
+
+# Setup wkhtmltopdf
+RUN yum -y install zip unzip wget libXrender libXext fontconfig-devel
+WORKDIR /usr/local/bin
+#RUN wget http://download.gna.org/wkhtmltopdf/0.12/0.12.4/wkhtmltox-0.12.4_linux-generic-amd64.tar.xz
+RUN wget https://github.com/wkhtmltopdf/wkhtmltopdf/releases/download/0.12.4/wkhtmltox-0.12.4_linux-generic-amd64.tar.xz
+RUN xz -dv wkhtmltox-0.12.4_linux-generic-amd64.tar.xz
+RUN tar -xf wkhtmltox-0.12.4_linux-generic-amd64.tar
+RUN wget http://dl.ipafont.ipa.go.jp/IPAexfont/IPAexfont00301.zip
+RUN unzip IPAexfont00301.zip
+RUN mv IPAexfont00301 /usr/share/fonts
+
+# Setup httpd
+RUN sed -i.bak -e 's|DirectoryIndex index.html$|DirectoryIndex index.html index.php|' \
+  -e 's|AllowOverride None|AllowOverride All|' \
+  -e 's|Options Indexes FollowSymLinks|Options FollowSymLinks|' \
+  -e 's|LogFormat .* combined$|LogFormat "%{X-Forwarded-For}i %h %l %u %t \\"%r\\" %>s %b %D \\"%{Referer}i\\" \\"%{User-Agent}i\\"" combined|' \
+  -e '$ a TraceEnable off' \
+  -e '$ a Timeout 180' \
+  -e '$ a KeepAlive on' \
+  -e '$ a KeepAliveTimeout 180' \
+  -e '$ a MaxKeepAliveRequests 100' \
+  -e '$ a AcceptFilter http none' \
+  -e '$ a AcceptFilter https none' \
+  -e '$ a ServerTokens Prod' \
+  /etc/httpd/conf/httpd.conf
+
+# Setup php
+RUN sed -i.bak -e 's|^;date.timezone =$|date.timezone = "Asia/Tokyo"|' \
+  -e 's|max_execution_time = 30|max_execution_time = 180|' \
+  -e 's|memory_limit = 128M|memory_limit = 2048M|' \
+  -e 's|post_max_size = 8M|post_max_size = 10M|' \
+  -e 's|upload_max_filesize = 2M|upload_max_filesize = 10M|' \
+  -e 's|;mbstring.language = Japanese|mbstring.language = Japanese|' \
+  -e 's|;mbstring.internal_encoding =|mbstring.internal_encoding = UTF-8|' \
+  -e 's|;mbstring.http_input =|mbstring.http_input = UTF-8|' \
+  -e 's|;mbstring.http_output =|mbstring.http_output = pass|' \
+  -e 's|;mbstring.encoding_translation = Off|mbstring.encoding_translation = Off|' \
+  -e 's|;mbstring.detect_order = auto|mbstring.detect_order = UTF-8,SJIS,EUC-JP,JIS,ASCII|' \
+  -e 's|;mbstring.substitute_character = none|mbstring.substitute_character = none|' \
+  -e 's|session.cookie_httponly = *$|session.cookie_httponly = on|' \
+  -e 's|expose_php = On|expose_php = Off|' \
+  /etc/php.ini
+
+CMD ["/usr/sbin/init"]
+
+# docker build --rm -t local/centos7-base -f Dockerfile-centos7-base .

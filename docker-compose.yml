@@ -1,0 +1,55 @@
+version: "3"
+
+services:
+  mysql:
+    build: ./mysql/
+    image: ${DOCKER_MACHINE_NAME}-db
+    container_name: ${DOCKER_MACHINE_NAME}-db
+    environment:
+      MYSQL_ROOT_PASSWORD: password
+    ports:
+      - 3306:3306
+    volumes:
+      - ./mysql/mysql_data:/var/lib/mysql  # データの永続化
+      - ./mysql/sqls:/docker-entrypoint-initdb.d   # 初期データ投入
+    privileged: true
+    restart: always
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    container_name: ${DOCKER_MACHINE_NAME}-phpmyadmin
+    environment:
+      PMA_ARBITRARY: 1
+      PMA_HOST: ${DB_HOST}
+      PMA_USER: root
+      PMA_PASSWORD: password
+#    env_file:
+#      - secrets/phpmyadmin.env
+    ports:
+      - 8888:80
+    volumes:
+     - "./phpmyadmin/sessions:/sessions"
+    restart: always
+  app:
+    depends_on:
+      - mysql
+    build:
+      context: app
+      dockerfile: Dockerfile
+#      args:
+    image: ${DOCKER_MACHINE_NAME}-app
+    container_name: ${DOCKER_MACHINE_NAME}-app
+    environment:
+      DB_HOST: ${DB_HOST}
+      DB_USER: ${DB_USER}
+      DB_PASS: ${DB_PASS}
+      DB_NAME: ${DB_NAME}
+    env_file:
+      - secrets/app.env
+    ports:
+      - 8080:80
+    volumes:
+     - "$PWD/app/cakephp-app:/var/www/html"
+     - "$PWD/app/scripts:/root/scripts"
+    privileged: true
+    tty: true
+    restart: always
